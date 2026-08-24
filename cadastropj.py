@@ -1,9 +1,9 @@
 import streamlit as st
 import requests
-import os
 from supabase import create_client, Client
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+
 
 # ==========================================
 # CREDENCIAIS DO NOTION (Via Variáveis de Ambiente)
@@ -18,22 +18,82 @@ SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 
 # Inicializa a conexão com o Supabase
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 BUCKET_NAME = "dossies"
 
-# ==========================================
-# ESTILO VISUAL DBV CAPITAL
-# ==========================================
-st.set_page_config(page_title="DBV Capital | Onboarding PJ", layout="centered")
+# 1. INICIALIZAÇÃO CORRETA DO CLIENTE SUPABASE
+supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ==========================================
+# CSS PERSONALIZADO
+# ==========================================
 css_dbv = """
 <style>
+    /* REMOVER FAIXA SUPERIOR E RODAPÉ DO STREAMLIT */
+    header[data-testid="stHeader"] { display: none !important; }
+    #MainMenu { visibility: hidden !important; }
+    footer { visibility: hidden !important; }
+
+    /* Fundo principal da página */
     .stApp { background: linear-gradient(135deg, #050807 0%, #20352f 100%); color: #fafafa; }
+    
+    /* Caixas de formulário e containers */
     .st-emotion-cache-1wivap2, .st-emotion-cache-16txtl3, div[data-testid="stForm"] {
         background-color: #0b201a; border-radius: 12px; border-top: 4px solid #948161; padding: 20px;
     }
+    
+    /* Títulos */
     h1, h2, h3 { color: #948161 !important; font-family: 'Segoe UI', sans-serif; }
-    div[data-baseweb="input"] > div { background-color: rgba(5, 8, 7, 0.5) !important; border: 1px solid #20352f !important; color: #fafafa !important; }
+    
+    /* Labels e Textos gerais para garantir leitura no fundo escuro */
+    label, p { color: #fafafa !important; }
+    
+    /* CAMPOS DE TEXTO (Inputs e Text Area) */
+    div[data-baseweb="input"] > div, div[data-baseweb="textarea"] > div { 
+        background-color: #f7f9f8 !important; 
+        border: 1px solid #948161 !important; 
+    }
+    
+    /* Forçando a cor do texto digitado para escuro (preto) */
+    div[data-baseweb="input"] input, div[data-baseweb="textarea"] textarea {
+        color: #050807 !important;
+        -webkit-text-fill-color: #050807 !important;
+    }
+    
+    /* CORREÇÃO FORÇADA DO FILE UPLOADER */
+    [data-testid="stFileUploadDropzone"] {
+        background-color: #152b24 !important; 
+        border: 2px dashed #948161 !important;
+        border-radius: 8px !important;
+    }
+    [data-testid="stFileUploadDropzone"] * {
+        color: #fafafa !important;
+        -webkit-text-fill-color: #fafafa !important;
+        opacity: 1 !important; 
+    }
+    [data-testid="stFileUploadDropzone"] button {
+        background-color: #948161 !important;
+        border: 1px solid #948161 !important;
+        border-radius: 6px !important;
+    }
+    [data-testid="stFileUploadDropzone"] button,
+    [data-testid="stFileUploadDropzone"] button * {
+        color: #050807 !important; 
+        -webkit-text-fill-color: #050807 !important;
+        fill: #050807 !important;  
+        font-weight: bold !important;
+    }
+    [data-testid="stFileUploadDropzone"] button:hover {
+        background-color: #050807 !important; 
+        border: 1px solid #948161 !important;
+    }
+    [data-testid="stFileUploadDropzone"] button:hover,
+    [data-testid="stFileUploadDropzone"] button:hover * {
+        color: #948161 !important; 
+        -webkit-text-fill-color: #948161 !important;
+        fill: #948161 !important;  
+    }
+
+    /* Botões Gerais */
     .stButton>button, div[data-testid="stFormSubmitButton"]>button {
         background-color: #948161; color: #050807; font-weight: bold; border: none; width: 100%; transition: 0.3s;
     }
@@ -66,7 +126,6 @@ def processar_regras_docs(natureza, data_inicio_str):
         meses_atuacao = 0
         anos_atuacao = 0
 
-    # KYC e Ficha Cadastral removidos da obrigatoriedade desta tela
     docs = []
 
     if "MICROEMPREENDEDOR" in natureza or "MEI" in natureza:
@@ -89,41 +148,15 @@ def hospedar_no_supabase(arquivo_st, cnpj):
     caminho_no_bucket = f"{cnpj}/{nome_seguro}"
     file_bytes = arquivo_st.getvalue()
     
-    res = supabase.storage.from_(BUCKET_NAME).upload(
+    # 2. CORREÇÃO AQUI: Usando supabase_client em vez de supabase
+    res = supabase_client.storage.from_(BUCKET_NAME).upload(
         path=caminho_no_bucket, 
         file=file_bytes, 
         file_options={"content-type": arquivo_st.type, "upsert": "true"}
     )
     
-    return supabase.storage.from_(BUCKET_NAME).get_public_url(caminho_no_bucket)
-
-def enviar_direto_notion(cnpj, razao_social, natureza, codigo_assessor, links_gerados):
-    arquivos_formatados = []
-    for nome_documento, link in links_gerados.items():
-        arquivos_formatados.append({
-            "type": "external",
-            "name": nome_documento,
-            "external": { "url": link } 
-        })
-
-    payload = {
-        "parent": { "database_id": DATABASE_ID },
-        "properties": {
-            "Empresa": { "title": [ { "text": { "content": razao_social } } ] },
-            "CNPJ": { "rich_text": [ { "text": { "content": cnpj } } ] },
-            "Natureza": { "rich_text": [ { "text": { "content": natureza } } ] },
-            "Assessor": { "rich_text": [ { "text": { "content": codigo_assessor } } ] },
-            "Arquivos": { "files": arquivos_formatados } 
-        }
-    }
-    
-    headers = {
-        "Authorization": f"Bearer {NOTION_TOKEN}",
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json"
-    }
-    
-    return requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
+    # 3. CORREÇÃO AQUI TAMBÉM: Usando supabase_client
+    return supabase_client.storage.from_(BUCKET_NAME).get_public_url(caminho_no_bucket)
 
 # ==========================================
 # INTERFACE
@@ -152,13 +185,24 @@ if st.button("Consultar Empresa"):
 if st.session_state.dados_empresa:
     dados = st.session_state.dados_empresa
     st.markdown("---")
-    st.markdown(f"### {dados['razao_social']}")
-    st.markdown(f"**Natureza Jurídica:** {dados['natureza_juridica']}")
+    st.markdown(f"### {dados.get('razao_social', 'Razão Social não encontrada')}")
+    st.markdown(f"**Natureza Jurídica:** {dados.get('natureza_juridica', 'N/A')}")
     
-    docs_necessarios = processar_regras_docs(dados['natureza_juridica'], dados.get('data_inicio_atividade', '2024-01-01'))
+    docs_necessarios = processar_regras_docs(dados.get('natureza_juridica', ''), dados.get('data_inicio_atividade', '2024-01-01'))
     
     st.markdown("---")
     
+    st.markdown("### 👤 Informações de Acesso")
+    texto_acessos = st.text_area(
+        "Acessos da Conta", 
+        placeholder="Insira os dados do usuário:\nNome: João da Silva\nTelefone: (11) 99999-9999\nE-mail: joao@email.com\nNível de Acesso: Master / Operador / Emissor de Ordem",
+        height=150
+    )
+    
+    st.warning("⚠️ **Observação Importante:** Caso seja solicitado acesso nível **Master**, **Operador** ou **Emissor de Ordem**, é imprescindível que você providencie e anexe o **documento de identidade**, **e-mail** e **telefone** de contato na documentação.")
+    
+    st.markdown("---")
+
     with st.form("form_notion"):
         st.markdown("### 📎 Anexar Documentos Obrigatórios")
         
@@ -170,6 +214,7 @@ if st.session_state.dados_empresa:
         codigo_ass = st.text_input("Código do Assessor", placeholder="Ex: A1234")
                 
         submit_btn = st.form_submit_button("Enviar Documentos")       
+        
         if submit_btn:
             docs_faltantes = [doc for doc, arq in arquivos_recebidos.items() if arq is None]
             
@@ -194,15 +239,18 @@ if st.session_state.dados_empresa:
                         for nome_doc, link_doc in links_para_notion.items():
                             arquivos_formatados.append({"type": "external", "name": nome_doc, "external": {"url": link_doc}})
 
+                        propriedades_notion = {
+                            "Empresa": { "title": [ { "text": { "content": dados.get('razao_social', '') } } ] },
+                            "CNPJ": { "rich_text": [ { "text": { "content": dados.get('cnpj', '') } } ] },
+                            "Natureza": { "rich_text": [ { "text": { "content": dados.get('natureza_juridica', '') } } ] },
+                            "Assessor": { "rich_text": [ { "text": { "content": codigo_ass } } ] },
+                            "Acessos": { "rich_text": [ { "text": { "content": texto_acessos } } ] },
+                            "Arquivos": { "files": arquivos_formatados } 
+                        }
+                        
                         payload = {
                             "parent": { "database_id": DATABASE_ID },
-                            "properties": {
-                                "Empresa": { "title": [ { "text": { "content": dados['razao_social'] } } ] },
-                                "CNPJ": { "rich_text": [ { "text": { "content": dados['cnpj'] } } ] },
-                                "Natureza": { "rich_text": [ { "text": { "content": dados['natureza_juridica'] } } ] },
-                                "Assessor": { "rich_text": [ { "text": { "content": codigo_ass } } ] },
-                                "Arquivos": { "files": arquivos_formatados } 
-                            }
+                            "properties": propriedades_notion
                         }
                         
                         headers = {
