@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import os
 from supabase import create_client, Client
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
