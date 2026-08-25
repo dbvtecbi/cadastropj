@@ -1,10 +1,9 @@
 import streamlit as st
 import requests
-import os
 from supabase import create_client, Client
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-
+import os
 
 # ==========================================
 # CREDENCIAIS DO NOTION (Via Variáveis de Ambiente)
@@ -374,7 +373,14 @@ if st.session_state.dados_empresa:
                         
                         arquivos_formatados = []
                         for nome_doc, link_doc in links_para_notion.items():
-                            arquivos_formatados.append({"type": "external", "name": nome_doc, "external": {"url": link_doc}})
+                            # CORREÇÃO: Limita o nome do arquivo a 100 caracteres para a API do Notion
+                            nome_curto = nome_doc[:97] + "..." if len(nome_doc) > 100 else nome_doc
+                            
+                            arquivos_formatados.append({
+                                "type": "external", 
+                                "name": nome_curto, 
+                                "external": {"url": link_doc}
+                            })
 
                         propriedades_notion = {
                             "Empresa": { "title": [ { "text": { "content": dados.get('razao_social', '') } } ] },
